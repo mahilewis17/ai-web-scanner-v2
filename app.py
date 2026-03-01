@@ -1,177 +1,91 @@
 import streamlit as st
-from PIL import Image
 import requests
-import numpy as np
-import io
-import hashlib
-import socket
-import whois
-from urllib.parse import urlparse
-from datetime import datetime
 from bs4 import BeautifulSoup
+import socket
+from urllib.parse import urlparse
 
-# ------------------------------------------------
-# PAGE CONFIG
-# ------------------------------------------------
-st.set_page_config(page_title="AI Forensic Scanner", layout="wide")
+st.set_page_config(page_title="AI Web Scanner", layout="wide")
 
-st.markdown("""
-<style>
-.big-title {
-    font-size:40px;
-    font-weight:bold;
-    color:#00BFFF;
-}
-</style>
-""", unsafe_allow_html=True)
+st.title("🔍 AI Digital Media Forensic Scanner")
+st.subheader("Advanced AI-Based Website & Media Authenticity Verification System")
 
-st.markdown('<p class="big-title">🔍 AI Digital Media Forensic Scanner</p>', unsafe_allow_html=True)
-st.write("Advanced AI-Based Website & Media Authenticity Verification System")
-
-# ------------------------------------------------
-# AI DETECTION (Demo Logic)
-# ------------------------------------------------
-def detect_ai_image(image):
-    img_array = np.array(image)
-    variance = np.var(img_array)
-
-    if variance < 500:
-        return "AI Generated", 0.85
-    else:
-        return "Likely Real", 0.30
-
-# ------------------------------------------------
-# METADATA CHECK
-# ------------------------------------------------
-def check_metadata(image):
-    metadata = image.getexif()
-    if metadata:
-        return "Metadata Present"
-    else:
-        return "No Metadata (Suspicious)"
-
-# ------------------------------------------------
-# SHA256 HASH
-# ------------------------------------------------
-def generate_hash(image_bytes):
-    return hashlib.sha256(image_bytes).hexdigest()
-
-# ------------------------------------------------
-# IMAGE EXTRACTOR (Cloud Safe - No Selenium)
-# ------------------------------------------------
-def extract_images_requests(url):
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        image_urls = []
-        for img in soup.find_all("img"):
-            src = img.get("src")
-            if src:
-                if src.startswith("http"):
-                    image_urls.append(src)
-
-        return image_urls
-
-    except:
-        return []
-
-# ------------------------------------------------
-# WEBSITE FORENSIC INFO
-# ------------------------------------------------
-def get_website_info(url):
-    try:
-        parsed = urlparse(url)
-        domain = parsed.netloc
-
-        ip_address = socket.gethostbyname(domain)
-        domain_info = whois.whois(domain)
-
-        return {
-            "Domain": domain,
-            "IP Address": ip_address,
-            "Registrar": domain_info.registrar,
-            "Creation Date": domain_info.creation_date,
-            "Expiration Date": domain_info.expiration_date,
-            "Scan Timestamp": datetime.now()
-        }
-
-    except Exception as e:
-        return {"Error": str(e)}
-
-# ------------------------------------------------
-# ANALYZE IMAGE
-# ------------------------------------------------
-def analyze_image(img_url):
-    try:
-        response = requests.get(img_url, timeout=10)
-        image_bytes = response.content
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-
-        prediction, confidence = detect_ai_image(image)
-        metadata_status = check_metadata(image)
-        image_hash = generate_hash(image_bytes)
-
-        st.image(image, width=300)
-        st.write(f"Prediction: {prediction}")
-        st.write(f"Confidence: {confidence*100:.2f}%")
-        st.write(f"Metadata: {metadata_status}")
-        st.write(f"SHA256: {image_hash[:40]}...")
-        st.write("---")
-
-        return prediction
-
-    except:
-        return None
-
-# ------------------------------------------------
-# MAIN INPUT
-# ------------------------------------------------
-st.subheader("🌐 Enter Website URL")
-url = st.text_input("Website URL")
+url = st.text_input("Enter Website URL")
 
 if st.button("🚀 Scan Website"):
 
-    if url:
+    if not url.startswith("http"):
+        url = "https://" + url
+
+    try:
+        # Add browser-like headers
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36"
+        }
 
         st.info("Analyzing website...")
 
-        images = extract_images_requests(url)
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
 
-        if len(images) == 0:
-            st.error("No images found or site blocked scraping.")
+        st.success("Website Loaded Successfully ✅")
+
+        # --------------------
+        # Website Title
+        # --------------------
+        st.markdown("## 🌐 Website Information")
+
+        if soup.title:
+            st.write("**Title:**", soup.title.string)
         else:
-            st.success(f"Found {len(images)} images. Analyzing first 5.")
+            st.write("No title found.")
 
-            ai_count = 0
-            total = min(5, len(images))
+        # --------------------
+        # Domain & IP Info
+        # --------------------
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc
 
-            for img_url in images[:5]:
-                result = analyze_image(img_url)
-                if result == "AI Generated":
-                    ai_count += 1
+        try:
+            ip_address = socket.gethostbyname(domain)
+        except:
+            ip_address = "Unable to fetch IP"
 
-            trust_score = 100 - ((ai_count / total) * 100)
+        st.write("**Domain:**", domain)
+        st.write("**IP Address:**", ip_address)
 
-            st.subheader("🔎 AI Risk Summary")
-            st.write(f"AI Images Detected: {ai_count}/{total}")
-            st.write(f"Website Trust Score: {trust_score:.2f}%")
+        # --------------------
+        # Extract Images
+        # --------------------
+        st.markdown("## 🖼 Images Found")
 
-            if trust_score > 70:
-                st.success("Risk Level: LOW")
-            elif trust_score > 40:
-                st.warning("Risk Level: MEDIUM")
-            else:
-                st.error("Risk Level: HIGH")
+        images = soup.find_all("img")
 
-        # Website Info
-        st.subheader("🌐 Website Forensic Information")
+        if images:
+            for img in images[:10]:  # Limit to first 10 images
+                img_url = img.get("src")
 
-        info = get_website_info(url)
+                if img_url:
+                    if img_url.startswith("//"):
+                        img_url = "https:" + img_url
+                    elif img_url.startswith("/"):
+                        img_url = url + img_url
 
-        for key, value in info.items():
-            st.write(f"{key}: {value}")
+                    st.image(img_url, width=300)
+        else:
+            st.warning("No images found or site blocked scraping.")
 
-    else:
-        st.warning("Please enter a valid URL.")
+        # --------------------
+        # Extract Links
+        # --------------------
+        st.markdown("## 🔗 Links Found")
+
+        links = soup.find_all("a", href=True)
+
+        if links:
+            for link in links[:20]:  # Limit to first 20 links
+                st.write(link["href"])
+        else:
+            st.write("No links found.")
+
+    except Exception as e:
+        st.error(f"Error scanning website: {e}")
