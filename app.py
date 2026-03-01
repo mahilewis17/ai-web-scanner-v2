@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import socket
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 import re
 
 st.set_page_config(page_title="AI Digital Risk Scanner", layout="centered")
@@ -26,22 +26,21 @@ if scan:
     with st.spinner("Analyzing website..."):
 
         try:
-            headers = {
-                "User-Agent": "Mozilla/5.0"
-            }
-
+            headers = {"User-Agent": "Mozilla/5.0"}
             response = requests.get(url, headers=headers, timeout=10)
             soup = BeautifulSoup(response.text, "html.parser")
 
-            parsed_url = urlparse(url)
-            domain = parsed_url.netloc
+            parsed = urlparse(url)
+            domain = parsed.netloc
 
+            # -----------------------
+            # IP ADDRESS
+            # -----------------------
             try:
                 ip_address = socket.gethostbyname(domain)
             except:
                 ip_address = "Unable to fetch"
 
-            st.markdown("---")
             st.markdown("## 🌐 Website Information")
             st.write("**Domain:**", domain)
             st.write("**IP Address:**", ip_address)
@@ -49,9 +48,9 @@ if scan:
             if soup.title:
                 st.write("**Title:**", soup.title.string)
 
-            # -------------------------
-            # RISK FACTOR ANALYSIS
-            # -------------------------
+            # -----------------------
+            # RISK ANALYSIS
+            # -----------------------
             risk_score = 0
 
             if "http://" in url:
@@ -68,14 +67,16 @@ if scan:
 
             st.markdown("## 🚨 Risk Analysis")
 
-            if risk_score >= 3:
-                st.error("🔴 RISKY WEBSITE")
+            if risk_score >= 4:
+                st.error("🔴 HIGH RISK WEBSITE")
+            elif risk_score >= 2:
+                st.warning("🟡 MEDIUM RISK WEBSITE")
             else:
                 st.success("🟢 SAFE WEBSITE")
 
-            # -------------------------
+            # -----------------------
             # AI CONTENT DETECTION
-            # -------------------------
+            # -----------------------
             st.markdown("## 🤖 AI Content Detection")
 
             page_text = soup.get_text().lower()
@@ -90,33 +91,58 @@ if scan:
             ]
 
             ai_found = False
+            keyword_hits = 0
 
-            for keyword in ai_keywords:
-                if keyword in page_text:
+            for word in ai_keywords:
+                if word in page_text:
                     ai_found = True
-                    break
+                    keyword_hits += 1
 
             sentences = re.split(r'[.!?]', page_text)
-            if len(sentences) > 100:
-                repetitive = sum(1 for s in sentences if len(s.split()) > 25)
-                if repetitive > 30:
-                    ai_found = True
+            long_sentences = sum(1 for s in sentences if len(s.split()) > 25)
+
+            if long_sentences > 40:
+                ai_found = True
 
             if ai_found:
-                st.warning("⚠️ Possible AI Generated Content Detected")
+                st.warning(f"⚠️ Possible AI Generated Content Detected ({keyword_hits} indicators found)")
             else:
                 st.success("No Strong AI Content Indicators Found")
 
-            # -------------------------
+            # -----------------------
+            # IMAGE DISPLAY
+            # -----------------------
+            st.markdown("## 🖼 Image Analysis")
+
+            images = soup.find_all("img")
+            st.write("Total Images Found:", len(images))
+
+            displayed = 0
+
+            for img in images:
+                src = img.get("src")
+                if src:
+                    full_url = urljoin(url, src)
+
+                    try:
+                        st.image(full_url, width=300)
+                        displayed += 1
+                    except:
+                        pass
+
+                    if displayed == 5:
+                        break
+
+            if displayed == 0:
+                st.info("No displayable images found or site blocks image loading.")
+
+            # -----------------------
             # PAGE SUMMARY
-            # -------------------------
+            # -----------------------
             st.markdown("## 📊 Page Summary")
 
             links = soup.find_all("a", href=True)
-            images = soup.find_all("img")
-
             st.write("Total Links Found:", len(links))
-            st.write("Total Images Found:", len(images))
 
         except Exception:
             st.error("🔴 Unable to Scan Website")
