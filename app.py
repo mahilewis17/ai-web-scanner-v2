@@ -1,9 +1,4 @@
 import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.options import Options
 from PIL import Image
 import requests
 import numpy as np
@@ -13,7 +8,7 @@ import socket
 import whois
 from urllib.parse import urlparse
 from datetime import datetime
-import time
+from bs4 import BeautifulSoup
 
 # ------------------------------------------------
 # PAGE CONFIG
@@ -26,11 +21,6 @@ st.markdown("""
     font-size:40px;
     font-weight:bold;
     color:#00BFFF;
-}
-.section-box {
-    background-color:#1E1E1E;
-    padding:15px;
-    border-radius:10px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -67,29 +57,25 @@ def generate_hash(image_bytes):
     return hashlib.sha256(image_bytes).hexdigest()
 
 # ------------------------------------------------
-# SELENIUM SCRAPER
+# IMAGE EXTRACTOR (Cloud Safe - No Selenium)
 # ------------------------------------------------
-def extract_images_selenium(url):
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
+def extract_images_requests(url):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        image_urls = []
+        for img in soup.find_all("img"):
+            src = img.get("src")
+            if src:
+                if src.startswith("http"):
+                    image_urls.append(src)
 
-    driver.get(url)
-    time.sleep(5)
+        return image_urls
 
-    images = driver.find_elements(By.TAG_NAME, "img")
-    image_urls = []
-
-    for img in images:
-        src = img.get_attribute("src")
-        if src:
-            image_urls.append(src)
-
-    driver.quit()
-    return image_urls
+    except:
+        return []
 
 # ------------------------------------------------
 # WEBSITE FORENSIC INFO
@@ -149,10 +135,9 @@ if st.button("🚀 Scan Website"):
 
     if url:
 
-        st.info("Launching browser & analyzing website...")
+        st.info("Analyzing website...")
 
-        # Extract Images
-        images = extract_images_selenium(url)
+        images = extract_images_requests(url)
 
         if len(images) == 0:
             st.error("No images found or site blocked scraping.")
