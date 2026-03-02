@@ -2,129 +2,178 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import socket
-from urllib.parse import urlparse, urljoin
-import random
+from urllib.parse import urlparse
+import whois
+import re
+import math
+import statistics
 
-st.set_page_config(page_title="AI Scanner", layout="wide")
+st.set_page_config(page_title="AI Digital Forensic Intelligence System", layout="wide")
 
-tab1, tab2 = st.tabs(["🔗 Link Scanner", "🎥 Video Analyzer"])
+st.title("🛡 AI Digital Forensic Intelligence System")
+st.markdown("---")
 
-# ===============================
-# LINK SCANNER
-# ===============================
-with tab1:
+url = st.text_input("Enter Website URL")
 
-    st.title("🔍 AI Digital Media Scanner")
+if st.button("🚀 Analyze Website", use_container_width=True):
 
-    url = st.text_input("Enter Website URL")
+    if not url:
+        st.warning("Please enter a URL")
+        st.stop()
 
-    if st.button("🚀 Scan Website"):
+    if not url.startswith("http"):
+        url = "https://" + url
 
-        if not url:
-            st.warning("Enter a URL first")
-        else:
-            if not url.startswith("http"):
-                url = "https://" + url
+    risk_score = 0
+    reasons = []
 
-            try:
-                headers = {"User-Agent": "Mozilla/5.0"}
-                response = requests.get(url, headers=headers, timeout=5)
-                soup = BeautifulSoup(response.text, "html.parser")
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=6, allow_redirects=True)
+        soup = BeautifulSoup(response.text, "html.parser")
 
-                domain = urlparse(url).netloc
+        parsed = urlparse(url)
+        domain = parsed.netloc
 
-                try:
-                    ip = socket.gethostbyname(domain)
-                except:
-                    ip = "Not Found"
+        # ============================
+        # BASIC INFO
+        # ============================
 
-                st.subheader("🌐 Website Info")
-                st.write("Domain:", domain)
-                st.write("IP Address:", ip)
+        try:
+            ip_address = socket.gethostbyname(domain)
+        except:
+            ip_address = "Unknown"
 
-                if soup.title:
-                    st.write("Title:", soup.title.string)
+        st.subheader("🌐 Website Information")
+        st.write("Domain:", domain)
+        st.write("IP Address:", ip_address)
+        st.write("Status Code:", response.status_code)
 
-                # Risk check
-                risk = 0
-                if url.startswith("http://"):
-                    risk += 2
-                if "-" in domain:
-                    risk += 1
-                if response.status_code != 200:
-                    risk += 2
+        # ============================
+        # DOMAIN OWNER (WHOIS)
+        # ============================
 
-                st.subheader("🚨 Risk Level")
+        st.subheader("👤 Domain Ownership")
 
-                if risk >= 4:
-                    st.error("🔴 HIGH RISK")
-                elif risk >= 2:
-                    st.warning("🟡 MEDIUM RISK")
-                else:
-                    st.success("🟢 SAFE")
+        try:
+            domain_info = whois.whois(domain)
+            st.write("Registrar:", domain_info.registrar)
+            st.write("Organization:", domain_info.org)
+            st.write("Country:", domain_info.country)
+            st.write("Creation Date:", domain_info.creation_date)
+        except:
+            st.warning("WHOIS information not available.")
 
-                # AI detection
-                st.subheader("🤖 AI Content Check")
+        # ============================
+        # LINK RISK ENGINE
+        # ============================
 
-                text = soup.get_text().lower()
-                keywords = ["chatgpt", "ai generated", "openai", "deepfake"]
+        if url.startswith("http://"):
+            risk_score += 15
+            reasons.append("Insecure HTTP protocol")
 
-                if any(k in text for k in keywords):
-                    st.warning("⚠ Possible AI Generated Content")
-                else:
-                    st.success("No obvious AI content detected")
+        if len(domain) > 30:
+            risk_score += 10
+            reasons.append("Unusually long domain")
 
-                # Show images
-                st.subheader("🖼 Images")
+        if domain.count("-") > 2:
+            risk_score += 10
+            reasons.append("Multiple hyphens in domain")
 
-                images = soup.find_all("img")
-                st.write("Total Images:", len(images))
+        if re.match(r"\d+\.\d+\.\d+\.\d+", domain):
+            risk_score += 20
+            reasons.append("IP-based URL detected")
 
-                count = 0
-                for img in images:
-                    if count >= 3:
-                        break
-                    src = img.get("src")
-                    if src:
-                        full = urljoin(url, src)
-                        st.image(full, width=250)
-                        count += 1
+        if len(response.history) > 2:
+            risk_score += 10
+            reasons.append("Multiple redirects detected")
 
-            except:
-                st.error("Unable to scan this website")
+        # Entropy check
+        def entropy(string):
+            prob = [float(string.count(c)) / len(string) for c in dict.fromkeys(list(string))]
+            return -sum([p * math.log2(p) for p in prob])
 
-# ===============================
-# VIDEO ANALYZER
-# ===============================
-with tab2:
+        if entropy(domain) > 4:
+            risk_score += 15
+            reasons.append("High domain randomness")
 
-    st.title("🎥 Deepfake & AI Video Detector")
+        # ============================
+        # AI TEXT DETECTION ENGINE
+        # ============================
 
-    option = st.radio("Choose Option", ["Upload Video", "Video URL"])
+        st.subheader("🤖 AI Text Analysis")
 
-    video_file = None
-    video_url = None
+        text = soup.get_text()
+        words = text.split()
 
-    if option == "Upload Video":
-        video_file = st.file_uploader("Upload Video", type=["mp4", "mov", "webm"])
-    else:
-        video_url = st.text_input("Enter Video URL")
+        ai_score = 0
 
-    if st.button("👁 Analyze Video"):
+        if len(words) > 100:
 
-        if not video_file and not video_url:
-            st.warning("Upload video or enter URL")
-        else:
-            score = random.randint(1, 100)
+            sentences = [s for s in re.split(r'[.!?]', text) if len(s.split()) > 3]
+            lengths = [len(s.split()) for s in sentences]
 
-            st.subheader("🔬 Deepfake Analysis")
-            st.progress(score)
-
-            if score > 70:
-                st.error(f"🔴 High Deepfake Risk ({score}%)")
-            elif score > 40:
-                st.warning(f"🟡 Medium Risk ({score}%)")
+            if len(lengths) > 1:
+                variance = statistics.variance(lengths)
             else:
-                st.success(f"🟢 Low Risk ({score}%)")
+                variance = 0
 
-            st.info("Demo AI model (simulated result)")
+            unique_ratio = len(set(words)) / len(words)
+            repetition_ratio = 1 - unique_ratio
+
+            if variance < 20:
+                ai_score += 20
+
+            if repetition_ratio > 0.4:
+                ai_score += 20
+
+            if "chatgpt" in text.lower() or "ai generated" in text.lower():
+                ai_score += 20
+
+        if ai_score > 100:
+            ai_score = 100
+
+        st.progress(ai_score)
+        st.write("AI Probability Score:", ai_score, "%")
+
+        if ai_score > 40:
+            st.warning("Text shows AI-like statistical patterns")
+        else:
+            st.success("Text appears human-like")
+
+        # ============================
+        # FINAL RISK SCORE
+        # ============================
+
+        if risk_score > 100:
+            risk_score = 100
+
+        st.subheader("🚨 Website Risk Score")
+        st.progress(risk_score)
+        st.write("Risk Score:", risk_score, "%")
+
+        if risk_score >= 60:
+            st.error("🔴 HIGH RISK")
+        elif risk_score >= 30:
+            st.warning("🟡 MEDIUM RISK")
+        else:
+            st.success("🟢 SAFE")
+
+        st.markdown("### 🔍 Risk Indicators Found")
+        if reasons:
+            for r in reasons:
+                st.write("•", r)
+        else:
+            st.write("No major red flags detected.")
+
+        # ============================
+        # SOURCE CODE
+        # ============================
+
+        st.subheader("🧾 Website Source Code")
+
+        with st.expander("Click to View HTML Source Code"):
+            st.code(response.text, language="html")
+
+    except Exception:
+        st.error("Unable to analyze website.")
