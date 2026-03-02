@@ -3,118 +3,128 @@ import requests
 from bs4 import BeautifulSoup
 import socket
 from urllib.parse import urlparse, urljoin
-import re
+import random
 
-st.set_page_config(page_title="AI Digital Risk Scanner", layout="centered")
+st.set_page_config(page_title="AI Scanner", layout="wide")
 
-st.title("🔍 AI Digital Media Forensic Scanner")
-st.markdown("---")
+tab1, tab2 = st.tabs(["🔗 Link Scanner", "🎥 Video Analyzer"])
 
-url = st.text_input("Enter Website URL")
+# ===============================
+# LINK SCANNER
+# ===============================
+with tab1:
 
-if st.button("🚀 Scan Website", use_container_width=True):
+    st.title("🔍 AI Digital Media Scanner")
 
-    if not url:
-        st.warning("Please enter a website URL")
-    else:
+    url = st.text_input("Enter Website URL")
 
-        if not url.startswith("http"):
-            url = "https://" + url
+    if st.button("🚀 Scan Website"):
 
-        try:
-            headers = {"User-Agent": "Mozilla/5.0"}
-            response = requests.get(url, headers=headers, timeout=5)
-            soup = BeautifulSoup(response.text, "html.parser")
+        if not url:
+            st.warning("Enter a URL first")
+        else:
+            if not url.startswith("http"):
+                url = "https://" + url
 
-            parsed = urlparse(url)
-            domain = parsed.netloc
-
-            # IP Address
             try:
-                ip_address = socket.gethostbyname(domain)
+                headers = {"User-Agent": "Mozilla/5.0"}
+                response = requests.get(url, headers=headers, timeout=5)
+                soup = BeautifulSoup(response.text, "html.parser")
+
+                domain = urlparse(url).netloc
+
+                try:
+                    ip = socket.gethostbyname(domain)
+                except:
+                    ip = "Not Found"
+
+                st.subheader("🌐 Website Info")
+                st.write("Domain:", domain)
+                st.write("IP Address:", ip)
+
+                if soup.title:
+                    st.write("Title:", soup.title.string)
+
+                # Risk check
+                risk = 0
+                if url.startswith("http://"):
+                    risk += 2
+                if "-" in domain:
+                    risk += 1
+                if response.status_code != 200:
+                    risk += 2
+
+                st.subheader("🚨 Risk Level")
+
+                if risk >= 4:
+                    st.error("🔴 HIGH RISK")
+                elif risk >= 2:
+                    st.warning("🟡 MEDIUM RISK")
+                else:
+                    st.success("🟢 SAFE")
+
+                # AI detection
+                st.subheader("🤖 AI Content Check")
+
+                text = soup.get_text().lower()
+                keywords = ["chatgpt", "ai generated", "openai", "deepfake"]
+
+                if any(k in text for k in keywords):
+                    st.warning("⚠ Possible AI Generated Content")
+                else:
+                    st.success("No obvious AI content detected")
+
+                # Show images
+                st.subheader("🖼 Images")
+
+                images = soup.find_all("img")
+                st.write("Total Images:", len(images))
+
+                count = 0
+                for img in images:
+                    if count >= 3:
+                        break
+                    src = img.get("src")
+                    if src:
+                        full = urljoin(url, src)
+                        st.image(full, width=250)
+                        count += 1
+
             except:
-                ip_address = "Unable to fetch"
+                st.error("Unable to scan this website")
 
-            st.markdown("## 🌐 Website Information")
-            st.write("Domain:", domain)
-            st.write("IP Address:", ip_address)
+# ===============================
+# VIDEO ANALYZER
+# ===============================
+with tab2:
 
-            if soup.title:
-                st.write("Title:", soup.title.string)
+    st.title("🎥 Deepfake & AI Video Detector")
 
-            # ---------------- RISK ANALYSIS ----------------
-            risk_score = 0
+    option = st.radio("Choose Option", ["Upload Video", "Video URL"])
 
-            if url.startswith("http://"):
-                risk_score += 2
+    video_file = None
+    video_url = None
 
-            if len(domain) > 30:
-                risk_score += 1
+    if option == "Upload Video":
+        video_file = st.file_uploader("Upload Video", type=["mp4", "mov", "webm"])
+    else:
+        video_url = st.text_input("Enter Video URL")
 
-            if domain.count("-") > 2:
-                risk_score += 1
+    if st.button("👁 Analyze Video"):
 
-            if response.status_code != 200:
-                risk_score += 2
+        if not video_file and not video_url:
+            st.warning("Upload video or enter URL")
+        else:
+            score = random.randint(1, 100)
 
-            st.markdown("## 🚨 Risk Analysis")
+            st.subheader("🔬 Deepfake Analysis")
+            st.progress(score)
 
-            if risk_score >= 4:
-                st.error("🔴 HIGH RISK WEBSITE")
-            elif risk_score >= 2:
-                st.warning("🟡 MEDIUM RISK WEBSITE")
+            if score > 70:
+                st.error(f"🔴 High Deepfake Risk ({score}%)")
+            elif score > 40:
+                st.warning(f"🟡 Medium Risk ({score}%)")
             else:
-                st.success("🟢 SAFE WEBSITE")
+                st.success(f"🟢 Low Risk ({score}%)")
 
-            # ---------------- AI DETECTION ----------------
-            st.markdown("## 🤖 AI Content Detection")
-
-            page_text = soup.get_text().lower()
-
-            ai_keywords = [
-                "ai generated",
-                "chatgpt",
-                "artificial intelligence",
-                "deepfake",
-            ]
-
-            ai_found = any(word in page_text for word in ai_keywords)
-
-            if ai_found:
-                st.warning("⚠️ Possible AI Generated Content Detected")
-            else:
-                st.success("No Strong AI Content Indicators Found")
-
-            # ---------------- IMAGES ----------------
-            st.markdown("## 🖼 Image Analysis")
-
-            images = soup.find_all("img")
-            st.write("Total Images Found:", len(images))
-
-            shown = 0
-
-            for img in images:
-                if shown >= 3:
-                    break
-
-                src = img.get("src")
-                if src:
-                    full_url = urljoin(url, src)
-                    try:
-                        st.image(full_url, width=250)
-                        shown += 1
-                    except:
-                        pass
-
-            if shown == 0:
-                st.info("No displayable images or site blocks loading.")
-
-            # ---------------- LINKS ----------------
-            st.markdown("## 📊 Page Summary")
-            links = soup.find_all("a", href=True)
-            st.write("Total Links Found:", len(links))
-
-        except requests.exceptions.Timeout:
-            st.error("⛔ Website took too long to respond.")
-        except Exception:
-            st.error("🔴 Unable to scan this website.")
+            st.info("Demo AI model (simulated result)")
