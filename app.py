@@ -1,175 +1,107 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
-import socket
-from urllib.parse import urlparse, urljoin
 import whois
+import socket
+import requests
+from urllib.parse import urlparse
 from datetime import datetime
+from bs4 import BeautifulSoup
+from openai import OpenAI
 
-st.set_page_config(page_title="AI Digital Media Scanner", layout="wide")
+# 🔑 Add your OpenAI API key here
+client = OpenAI(api_key="YOUR_OPENAI_API_KEY")
 
-tab1, tab2 = st.tabs(["Link Scanner", "Video Analyzer"])
+st.set_page_config(page_title="AI Domain & Content Analyzer", layout="centered")
 
-# =========================================================
-# LINK SCANNER
-# =========================================================
-with tab1:
+st.title("🌐 AI Domain & Content Analyzer")
+st.write("Analyze website details + detect AI-generated content")
 
-    st.title("AI Digital Media Scanner")
-    st.subheader("Advanced Website and Media Authenticity Verification System")
+url = st.text_input("Enter Website URL")
 
-    url = st.text_input("Enter Website URL")
+def extract_domain(url):
+    parsed = urlparse(url)
+    domain = parsed.netloc
+    if domain.startswith("www."):
+        domain = domain.replace("www.", "")
+    return domain
 
-    if st.button("Scan Website"):
+def get_website_text(url):
+    response = requests.get(url, timeout=10)
+    soup = BeautifulSoup(response.text, "html.parser")
+    
+    title = soup.title.string if soup.title else "No title found"
+    
+    # Get visible text
+    paragraphs = soup.find_all("p")
+    content = " ".join([p.get_text() for p in paragraphs])
+    
+    return title, content[:3000]  # limit to 3000 chars
 
-        if not url.startswith("http"):
-            url = "https://" + url
+def detect_ai_content(text):
+    prompt = f"""
+    Analyze the following text and determine if it is likely AI-generated or human-written.
+    Respond with:
+    - Probability (AI %)
+    - Short reason
+    
+    Text:
+    {text}
+    """
 
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return response.choices[0].message.content
+
+if st.button("Analyze"):
+    if url:
         try:
-            response = requests.get(
-                url,
-                timeout=10,
-                headers={"User-Agent": "Mozilla/5.0"}
-            )
+            domain = extract_domain(url)
 
-            soup = BeautifulSoup(response.text, "html.parser")
-            parsed = urlparse(url)
-            domain = parsed.netloc
+            # IP
+            ip_address = socket.gethostbyname(domain)
 
-            # Website Title
-            title = soup.title.string.strip() if soup.title else "No title found"
+            # WHOIS
+            domain_info = whois.whois(domain)
 
-            # IP Address
-            try:
-                ip_address = socket.gethostbyname(domain)
-            except:
-                ip_address = "Unavailable"
+            registrar = domain_info.registrar
+            creation_date = domain_info.creation_date
+            expiration_date = domain_info.expiration_date
+            updated_date = domain_info.updated_date
 
-            # WHOIS Information
-            try:
-                domain_info = whois.whois(domain)
+            if isinstance(creation_date, list):
+                creation_date = creation_date[0]
+            if isinstance(expiration_date, list):
+                expiration_date = expiration_date[0]
 
-                registrar = domain_info.registrar
-                organization = domain_info.org
-                creation_date = domain_info.creation_date
-                expiration_date = domain_info.expiration_date
-                updated_date = domain_info.updated_date
+            if creation_date:
+                age = (datetime.now() - creation_date).days // 365
+            else:
+                age = "Unavailable"
 
-                # Handle list format from some WHOIS responses
-                if isinstance(creation_date, list):
-                    creation_date = creation_date[0]
-                if isinstance(expiration_date, list):
-                    expiration_date = expiration_date[0]
-                if isinstance(updated_date, list):
-                    updated_date = updated_date[0]
+            # Website content
+            title, content = get_website_text(url)
 
-                # Calculate Domain Age
-                if creation_date:
-                    domain_age = (datetime.now() - creation_date).days // 365
-                else:
-                    domain_age = "Unknown"
+            # AI Detection
+            ai_result = detect_ai_content(content)
 
-            except:
-                registrar = "Unavailable"
-                organization = "Unavailable"
-                creation_date = "Unavailable"
-                expiration_date = "Unavailable"
-                updated_date = "Unavailable"
-                domain_age = "Unavailable"
-
-            # Extract Images
-            images = []
-            for img in soup.find_all("img"):
-                src = img.get("src")
-                if src:
-                    full_url = urljoin(url, src)
-                    images.append(full_url)
-
-            # Risk Score
-            risk_score = 0
-
-            if not url.startswith("https"):
-                risk_score += 30
-
-            if "@" in url:
-                risk_score += 20
-
-            if len(domain) > 25:
-                risk_score += 10
-
-            if isinstance(domain_age, int) and domain_age < 1:
-                risk_score += 20
-
-            # -------------------------
             # Display Results
-            # -------------------------
+            st.subheader("📌 Domain Details")
+            st.write(f"**Domain:** {domain}")
+            st.write(f"**IP Address:** {ip_address}")
+            st.write(f"**Registrar:** {registrar if registrar else 'Unavailable'}")
+            st.write(f"**Creation Date:** {creation_date if creation_date else 'Unavailable'}")
+            st.write(f"**Expiration Date:** {expiration_date if expiration_date else 'Unavailable'}")
+            st.write(f"**Domain Age (Years):** {age}")
 
-            st.markdown("---")
-            st.header("Risk Analysis")
+            st.subheader("📰 Website Info")
+            st.write(f"**Title:** {title}")
 
-            if risk_score < 20:
-                st.success("SAFE WEBSITE")
-            elif risk_score < 50:
-                st.warning("MEDIUM RISK")
-            else:
-                st.error("HIGH RISK")
-
-            st.markdown("---")
-            st.header("Website Information")
-
-            st.write("Title:", title)
-            st.write("Domain:", domain)
-            st.write("IP Address:", ip_address)
-
-            st.markdown("---")
-            st.header("Domain Registration Details")
-
-            st.write("Registrar:", registrar)
-            st.write("Organization:", organization)
-            st.write("Creation Date:", creation_date)
-            st.write("Last Updated Date:", updated_date)
-            st.write("Expiration Date:", expiration_date)
-            st.write("Domain Age (years):", domain_age)
-
-            st.markdown("---")
-            st.header("Extracted Images")
-
-            if images:
-                for img_url in images[:10]:
-                    try:
-                        st.image(img_url, use_column_width=True)
-                    except:
-                        pass
-            else:
-                st.warning("No images found or site blocked scraping.")
+            st.subheader("🤖 AI Content Detection")
+            st.write(ai_result)
 
         except Exception as e:
-            st.error(f"Error scanning website: {e}")
-
-# =========================================================
-# VIDEO ANALYZER
-# =========================================================
-with tab2:
-
-    st.title("Deepfake and AI Video Detector")
-    st.write("Upload a video to analyze for AI-generated patterns")
-
-    video_file = st.file_uploader("Upload Video", type=["mp4", "mov", "webm"])
-
-    if st.button("Analyze Video"):
-
-        if video_file:
-            st.video(video_file)
-
-            st.info("Analyzing video patterns...")
-
-            import random
-            confidence = random.randint(40, 95)
-
-            if confidence > 75:
-                st.error(f"AI Generated Content Detected (Confidence: {confidence}%)")
-            else:
-                st.success(f"Likely Real Video (Confidence: {confidence}%)")
-
-        else:
-            st.warning("Please upload a video.")
+            st.error("Error fetching data. Website may block scraping or have privacy protection.")
+    else:
+        st.warning("Please enter a valid URL.")
