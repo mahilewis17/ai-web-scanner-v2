@@ -1,5 +1,6 @@
 streamlit
 openai>=1.0.0
+python-whois
 requests
 beautifulsoup4
 selenium
