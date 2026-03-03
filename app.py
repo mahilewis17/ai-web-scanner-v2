@@ -3,16 +3,21 @@ import requests
 from bs4 import BeautifulSoup
 import socket
 from urllib.parse import urlparse, urljoin
-import re
+import os
+from PIL import Image
+import cv2
+import numpy as np
 
 st.set_page_config(page_title="AI Digital Risk Scanner", layout="centered")
 
-st.title("🔍 AI Digital Media Forensic Scanner")
+st.title("AI Digital Media Forensic Scanner")
 st.markdown("---")
+
+# ---------------- WEBSITE SCANNER ----------------
 
 url = st.text_input("Enter Website URL")
 
-if st.button("🚀 Scan Website", use_container_width=True):
+if st.button("Scan Website", use_container_width=True):
 
     if not url:
         st.warning("Please enter a website URL")
@@ -29,20 +34,19 @@ if st.button("🚀 Scan Website", use_container_width=True):
             parsed = urlparse(url)
             domain = parsed.netloc
 
-            # IP Address
             try:
                 ip_address = socket.gethostbyname(domain)
             except:
                 ip_address = "Unable to fetch"
 
-            st.markdown("## 🌐 Website Information")
+            st.markdown("Website Information")
             st.write("Domain:", domain)
             st.write("IP Address:", ip_address)
 
             if soup.title:
                 st.write("Title:", soup.title.string)
 
-            # ---------------- RISK ANALYSIS ----------------
+            # Risk analysis
             risk_score = 0
 
             if url.startswith("http://"):
@@ -57,64 +61,70 @@ if st.button("🚀 Scan Website", use_container_width=True):
             if response.status_code != 200:
                 risk_score += 2
 
-            st.markdown("## 🚨 Risk Analysis")
+            st.markdown("Risk Analysis")
 
             if risk_score >= 4:
-                st.error("🔴 HIGH RISK WEBSITE")
+                st.error("High Risk Website")
             elif risk_score >= 2:
-                st.warning("🟡 MEDIUM RISK WEBSITE")
+                st.warning("Medium Risk Website")
             else:
-                st.success("🟢 SAFE WEBSITE")
+                st.success("Safe Website")
 
-            # ---------------- AI DETECTION ----------------
-            st.markdown("## 🤖 AI Content Detection")
+        except:
+            st.error("Unable to scan this website.")
 
-            page_text = soup.get_text().lower()
 
-            ai_keywords = [
-                "ai generated",
-                "chatgpt",
-                "artificial intelligence",
-                "deepfake",
-            ]
+# ---------------- FILE UPLOAD DEEPFAKE CHECK ----------------
 
-            ai_found = any(word in page_text for word in ai_keywords)
+st.markdown("---")
+st.subheader("Upload Media for AI / Deepfake Detection")
 
-            if ai_found:
-                st.warning("⚠️ Possible AI Generated Content Detected")
-            else:
-                st.success("No Strong AI Content Indicators Found")
+uploaded_file = st.file_uploader(
+    "Upload image, video or audio file",
+    type=["jpg", "jpeg", "png", "mp4", "mp3"]
+)
 
-            # ---------------- IMAGES ----------------
-            st.markdown("## 🖼 Image Analysis")
+if uploaded_file is not None:
 
-            images = soup.find_all("img")
-            st.write("Total Images Found:", len(images))
+    file_type = uploaded_file.type
+    file_name = uploaded_file.name.lower()
 
-            shown = 0
+    st.write("File Name:", uploaded_file.name)
+    st.write("File Type:", file_type)
 
-            for img in images:
-                if shown >= 3:
-                    break
+    # Display media
+    if "image" in file_type:
+        image = Image.open(uploaded_file)
+        st.image(image, use_column_width=True)
 
-                src = img.get("src")
-                if src:
-                    full_url = urljoin(url, src)
-                    try:
-                        st.image(full_url, width=250)
-                        shown += 1
-                    except:
-                        pass
+    elif "video" in file_type:
+        st.video(uploaded_file)
 
-            if shown == 0:
-                st.info("No displayable images or site blocks loading.")
+    elif "audio" in file_type:
+        st.audio(uploaded_file)
 
-            # ---------------- LINKS ----------------
-            st.markdown("## 📊 Page Summary")
-            links = soup.find_all("a", href=True)
-            st.write("Total Links Found:", len(links))
+    if st.button("Analyze Media"):
 
-        except requests.exceptions.Timeout:
-            st.error("⛔ Website took too long to respond.")
-        except Exception:
-            st.error("🔴 Unable to scan this website.")
+        deepfake_score = 0
+
+        # Simple filename check
+        suspicious_words = ["ai", "generated", "deepfake", "synthetic"]
+
+        if any(word in file_name for word in suspicious_words):
+            deepfake_score += 2
+
+        # Basic image noise detection
+        if "image" in file_type:
+            image_array = np.array(image)
+            variance = np.var(image_array)
+
+            if variance < 50:  # very smooth images often AI
+                deepfake_score += 1
+
+        # Final Result
+        if deepfake_score >= 2:
+            st.error("High Probability of AI Generated / Deepfake Media")
+        elif deepfake_score == 1:
+            st.warning("Possible AI Manipulated Media")
+        else:
+            st.success("No Strong AI Manipulation Indicators Found")
